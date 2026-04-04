@@ -92,6 +92,8 @@ def analyze_data(class_df, hw_df):
 
     monthly_score = mock_hw.groupby('月份')['作业得分率'].mean()
     results['mock_hw_score_monthly'] = {str(k): round(float(v)*100, 2) for k, v in sorted(monthly_score.to_dict().items())}
+    monthly_count = mock_hw.groupby('月份').size()
+    results['mock_hw_count_monthly'] = {str(k): int(v) for k, v in sorted(monthly_count.to_dict().items())}
 
     grade_score = mock_hw.groupby(['年级', '月份'])['作业得分率'].mean()
     results['mock_hw_grade_monthly'] = {}
@@ -603,23 +605,34 @@ def make_charts(data):
     charts['cat_pie'] = fig4
 
     mock_scores = data.get('mock_hw_score_monthly', {})
+    mock_counts = data.get('mock_hw_count_monthly', {})
     if mock_scores:
         ms = sorted(mock_scores.keys())
         sc = [mock_scores[m] for m in ms]
-        fig5 = go.Figure()
+        mc = [mock_counts.get(m, 0) for m in ms]
+        fig5 = make_subplots(specs=[[{"secondary_y": True}]])
+        # 柱状图：月均作业次数（典型班级）
+        fig5.add_trace(go.Bar(
+            x=ms, y=mc, name='月均作业次数',
+            marker_color='#F58518', opacity=0.6,
+            yaxis='y2'
+        ))
+        # 折线图：月均得分率趋势
         fig5.add_trace(go.Scatter(
-            x=ms, y=sc, mode='lines+markers+text',
-            line=dict(color='#E45756', width=3), marker=dict(size=9, color='#E45756'),
-            fill='tozeroy', fillcolor='rgba(228,87,86,0.1)',
-            text=[f"{s}%" for s in sc], textposition='top center', textfont=dict(size=11),
-            name='得分率'
+            x=ms, y=sc, name='月均得分率',
+            mode='lines+markers+text',
+            line=dict(color='#E45756', width=2.5), marker=dict(size=8, color='#E45756'),
+            text=[f"{s}%" for s in sc], textposition='top center', textfont=dict(size=10),
+            yaxis='y'
         ))
         fig5.update_layout(
             title=dict(text='图5 听说模拟类月均得分率趋势', font=dict(size=16)),
-            xaxis_title='月份', yaxis_title='得分率（%）',
-            height=380, template='plotly_white',
-            yaxis=dict(range=[0, 100]), margin=dict(b=40)
+            template='plotly_white', height=380,
+            legend=dict(orientation='h', yanchor='bottom', y=1.02),
+            hovermode='x unified'
         )
+        fig5.update_layout(yaxis2=dict(title_text='作业次数', overlaying='y', side='right'))
+        fig5.update_yaxes(title_text='得分率（%）', range=[0, 100])
         charts['mock_score'] = fig5
 
     grade_scores = data.get('mock_hw_grade_monthly', {})
@@ -876,7 +889,16 @@ def export_to_docx(report_md: str, charts: dict = None) -> tuple:
         if line.startswith('### '):
             sub_text = line.replace('### ', '').strip()
             add_para(sub_text, '楷体_GB2312', 16, True,
-                     WD_ALIGN_PARAGRAPH.LEFT, space_before=6, space_after=3)
+                     WD_ALIGN_PARAGRAPH.LEFT, first_indent=False,
+                     space_before=6, space_after=3)
+            # ── 图表位置优化：
+            # • 图1月总量、图2年级趋势 → 放在 3.3 末尾（flush）
+            # • 图3分类堆叠   → 放在 3.4 末尾（flush）
+            # • 图5得分率组合图（柱状+折线）→ 已在四、，无需操作
+            if sub_text in ('3.3 应用频次分析',):
+                flush_section_charts()
+            elif sub_text in ('3.4 应用方式分析',):
+                flush_section_charts()
             i += 1; continue
 
         # ── 段落（处理内联加粗）────────────────────────────────
